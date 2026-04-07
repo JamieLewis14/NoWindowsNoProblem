@@ -9,7 +9,10 @@ import LogViewer from './components/LogViewer'
 export default function App() {
   const setupStatus = useGameStore((s) => s.setupStatus)
   const setSetupStatus = useGameStore((s) => s.setSetupStatus)
-  const loadGames = useGameStore((s) => s.loadGames)
+  const setupComplete = useGameStore((s) => s.setupComplete)
+  const markSetupComplete = useGameStore((s) => s.markSetupComplete)
+  const clearSetupComplete = useGameStore((s) => s.clearSetupComplete)
+  const init = useGameStore((s) => s.init)
   const setRunningState = useGameStore((s) => s.setRunningState)
   const appendLog = useGameStore((s) => s.appendLog)
   const showAddModal = useGameStore((s) => s.showAddModal)
@@ -19,19 +22,16 @@ export default function App() {
   const setActiveView = useGameStore((s) => s.setActiveView)
 
   useEffect(() => {
-    if (!window.api) {
-      // Running in browser (not Electron) — show setup checker with mock data
-      setSetupStatus({ wine: false, rosetta: false, xquartz: false })
-      return
-    }
+    init()
 
+    if (!window.api) return
+
+    // Kick off dependency check in parallel
     window.api.checkDependencies().then(setSetupStatus)
-    loadGames()
 
     const removeLogListener = window.api.onLogLine(({ gameId, line, stream }) => {
       appendLog(gameId, line, stream)
     })
-
     const removeStateListener = window.api.onGameStateChange(({ gameId, state }) => {
       setRunningState(gameId, state)
     })
@@ -42,48 +42,66 @@ export default function App() {
     }
   }, [])
 
-  const wineReady = setupStatus?.wine === true
-  const showSetup = activeView === 'settings' || !wineReady
+  // Still loading from store
+  if (setupComplete === null) {
+    return <div className="flex h-screen bg-gray-950" />
+  }
+
+  // Show setup checker if: not completed yet, OR user navigated to settings
+  const showSetup = !setupComplete || activeView === 'settings'
 
   return (
     <div className="flex h-screen bg-gray-950 text-gray-100">
-      {/* Sidebar */}
-      <aside className="w-52 flex-shrink-0 border-r border-gray-800 flex flex-col pt-10">
-        <div className="px-5 mb-8">
-          <h1 className="text-lg font-bold tracking-tight text-white">NoWindows</h1>
-          <p className="text-xs text-gray-500">NoProblem</p>
-        </div>
+      {/* Sidebar — only shown once setup is done */}
+      {setupComplete && (
+        <aside className="w-52 flex-shrink-0 border-r border-gray-800 flex flex-col pt-10">
+          <div className="px-5 mb-8">
+            <h1 className="text-lg font-bold tracking-tight text-white">NoWindows</h1>
+            <p className="text-xs text-gray-500">NoProblem</p>
+          </div>
 
-        <nav className="flex-1 px-3 space-y-1">
-          <SidebarBtn
-            active={activeView === 'library' && wineReady}
-            disabled={!wineReady}
-            onClick={() => wineReady && setActiveView('library')}
-          >
-            <LibraryIcon />
-            Library
-          </SidebarBtn>
-          <SidebarBtn
-            active={activeView === 'settings'}
-            onClick={() => setActiveView('settings')}
-          >
-            <SettingsIcon />
-            Settings
-          </SidebarBtn>
-        </nav>
+          <nav className="flex-1 px-3 space-y-1">
+            <SidebarBtn
+              active={activeView === 'library'}
+              onClick={() => setActiveView('library')}
+            >
+              <LibraryIcon />
+              Library
+            </SidebarBtn>
+            <SidebarBtn
+              active={activeView === 'settings'}
+              onClick={() => setActiveView('settings')}
+            >
+              <SettingsIcon />
+              Settings
+            </SidebarBtn>
+          </nav>
 
-        <div className="px-5 pb-5 text-xs text-gray-600">v1.0.0</div>
-      </aside>
+          <div className="px-5 pb-5 text-xs text-gray-600">v1.0.0</div>
+        </aside>
+      )}
 
       {/* Main content */}
       <main className="flex-1 overflow-hidden flex flex-col">
         {showSetup ? (
           <SetupChecker
             status={setupStatus}
+            isSettingsMode={setupComplete && activeView === 'settings'}
             onRecheck={async () => {
+              if (!window.api) return
               const s = await window.api.checkDependencies()
               setSetupStatus(s)
-              if (s.wine) setActiveView('library')
+              return s
+            }}
+            onContinue={async () => {
+              await markSetupComplete()
+            }}
+            onRecheckAndRegate={async () => {
+              await clearSetupComplete()
+              if (window.api) {
+                const s = await window.api.checkDependencies()
+                setSetupStatus(s)
+              }
             }}
           />
         ) : (

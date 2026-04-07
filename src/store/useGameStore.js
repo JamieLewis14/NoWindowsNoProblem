@@ -7,33 +7,53 @@ const useGameStore = create((set, get) => ({
   runningGames: {},
   logs: {},
   setupStatus: null,
+  setupComplete: null, // null = not yet loaded from store
   activeView: 'library',
   selectedGameId: null,
   showAddModal: false,
   showLogViewer: false,
   logViewerGameId: null,
+  pendingExePath: null, // path pre-filled into AddGameModal
 
   setActiveView: (view) => set({ activeView: view }),
   setSelectedGameId: (id) => set({ selectedGameId: id }),
   setShowAddModal: (show) => set({ showAddModal: show }),
+  setPendingExePath: (path) => set({ pendingExePath: path }),
 
   openLogViewer: (gameId) => set({ showLogViewer: true, logViewerGameId: gameId }),
   closeLogViewer: () => set({ showLogViewer: false }),
 
-  loadGames: async () => {
-    const games = await window.api.getGames()
-    set({ games: games || [] })
+  init: async () => {
+    if (!window.api) {
+      set({ setupComplete: false, setupStatus: { wine: false, rosetta: false, xquartz: false } })
+      return
+    }
+    const [games, setupComplete] = await Promise.all([
+      window.api.getGames(),
+      window.api.getSetting('setupComplete')
+    ])
+    set({ games: games || [], setupComplete: setupComplete === true })
+  },
+
+  markSetupComplete: async () => {
+    if (window.api) await window.api.setSetting('setupComplete', true)
+    set({ setupComplete: true, activeView: 'library' })
+  },
+
+  clearSetupComplete: async () => {
+    if (window.api) await window.api.setSetting('setupComplete', false)
+    set({ setupComplete: false })
   },
 
   addGame: async (game) => {
     const games = [...get().games, game]
-    await window.api.saveGames(games)
+    if (window.api) await window.api.saveGames(games)
     set({ games })
   },
 
   removeGame: async (gameId) => {
     const games = get().games.filter((g) => g.id !== gameId)
-    await window.api.saveGames(games)
+    if (window.api) await window.api.saveGames(games)
     set({ games })
   },
 
@@ -41,7 +61,7 @@ const useGameStore = create((set, get) => ({
     const games = get().games.map((g) =>
       g.id === gameId ? { ...g, ...updates } : g
     )
-    await window.api.saveGames(games)
+    if (window.api) await window.api.saveGames(games)
     set({ games })
   },
 
