@@ -1,0 +1,12 @@
+appId: com.nowindowsnoproblem.app
+productName: NoWindowsNoProblem
+mac:
+  category: public.app-category.games
+  target: dmg
+  arch: arm64
+directories:
+  output: dist
+files:
+  - electron/**/*
+  - dist-renderer/**/*
+  - package.json
