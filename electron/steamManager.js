@@ -1,4 +1,4 @@
-const { spawn } = require('child_process')
+const { spawn, execSync } = require('child_process')
 const fs = require('fs')
 const path = require('path')
 const os = require('os')
@@ -31,14 +31,23 @@ function findSteamExe(bottlePath) {
   return null
 }
 
-function isSteamAlive() {
-  if (!steamProcess || !steamProcess.pid) return false
+function isSteamAliveByProcess() {
   try {
-    process.kill(steamProcess.pid, 0)
+    execSync('pgrep -f "steam.exe"', { stdio: 'pipe' })
     return true
   } catch {
     return false
   }
+}
+
+function isSteamAlive() {
+  if (steamProcess && steamProcess.pid) {
+    try {
+      process.kill(steamProcess.pid, 0)
+      return true
+    } catch { /* fall through to pgrep */ }
+  }
+  return isSteamAliveByProcess()
 }
 
 function launchSteam(winePath, bottlePath, onLog) {
@@ -68,7 +77,8 @@ function launchSteam(winePath, bottlePath, onLog) {
 
   proc.on('close', (code) => {
     onLog({ line: `[Steam] Process exited with code ${code}\n`, stream: 'system' })
-    if (steamProcess === proc) steamProcess = null
+    // Only clear steamProcess if the real Steam is also gone (bootstrapper exits with 0)
+    if (steamProcess === proc && !isSteamAliveByProcess()) steamProcess = null
   })
 
   proc.on('error', (err) => {
@@ -96,7 +106,8 @@ function waitForSteamReady(steamProc, timeoutMs = 45000) {
     const onEarlyExit = (code) => {
       if (resolved) return
       const elapsed = Date.now() - launchTime
-      if (elapsed < earlyCrashMs) {
+      // Exit code 0 = bootstrapper handed off to a child process — not a crash
+      if (elapsed < earlyCrashMs && code !== 0) {
         resolved = true
         reject(new Error(`Steam crashed on startup (exit code ${code} after ${elapsed}ms)`))
       }
