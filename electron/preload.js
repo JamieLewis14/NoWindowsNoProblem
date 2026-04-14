@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('api', {
   killGame: (gameId) => ipcRenderer.invoke('kill-game', gameId),
   resetBottle: (game) => ipcRenderer.invoke('reset-bottle', game),
   openBottleFolder: (bottlePath) => ipcRenderer.invoke('open-bottle-folder', bottlePath),
+  bottleExists: (gameId) => ipcRenderer.invoke('bottle-exists', gameId),
   getHomeDir: () => ipcRenderer.invoke('get-home-dir'),
   onLogLine: (callback) => {
     const handler = (_event, data) => callback(data)

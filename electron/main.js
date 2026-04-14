@@ -53,6 +53,7 @@ ipcMain.handle('check-dependencies', () => {
 ipcMain.handle('open-file-picker', async (_event, options) => {
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ['openFile'],
+    title: options?.title || 'Select a file',
     filters: options?.filters || []
   })
   if (result.canceled) return null
@@ -77,17 +78,24 @@ ipcMain.handle('set-setting', (_event, key, value) => {
 
 ipcMain.handle('launch-game', async (_event, game) => {
   const winePath = store.get('winePath', '/opt/homebrew/bin/wine')
+
+  const sendLog = (data) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('log-line', data)
+    }
+  }
+
+  const sendState = (stateChange) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('game-state-change', stateChange)
+    }
+  }
+
   try {
-    await wineManager.launchGame(game, winePath, (data) => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('log-line', data)
-      }
-    }, (stateChange) => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('game-state-change', stateChange)
-      }
-    })
+    await wineManager.launchGame(game, winePath, sendLog, sendState)
   } catch (err) {
+    // Send the error as a log line so LogViewer can display it
+    sendLog({ gameId: game.id, line: `[Error] ${err.message}\n`, stream: 'error' })
     throw new Error(err.message)
   }
 })
@@ -103,6 +111,10 @@ ipcMain.handle('reset-bottle', async (_event, game) => {
 
 ipcMain.handle('open-bottle-folder', (_event, bottlePath) => {
   shell.openPath(bottlePath)
+})
+
+ipcMain.handle('bottle-exists', (_event, gameId) => {
+  return wineManager.bottleExists(gameId)
 })
 
 ipcMain.handle('get-home-dir', () => {

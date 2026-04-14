@@ -4,4 +4,4 @@ dist-electron/
 *.dmg
 *.app
 .DS_Store
-.claude/
+.claude/dist-renderer/

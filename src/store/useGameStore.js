@@ -7,13 +7,14 @@ const useGameStore = create((set, get) => ({
   runningGames: {},
   logs: {},
   setupStatus: null,
-  setupComplete: null, // null = not yet loaded from store
+  setupComplete: null,
   activeView: 'library',
   selectedGameId: null,
   showAddModal: false,
   showLogViewer: false,
   logViewerGameId: null,
-  pendingExePath: null, // path pre-filled into AddGameModal
+  pendingExePath: null,
+  toast: null, // { message, type: 'error' | 'info' }
 
   setActiveView: (view) => set({ activeView: view }),
   setSelectedGameId: (id) => set({ selectedGameId: id }),
@@ -22,6 +23,12 @@ const useGameStore = create((set, get) => ({
 
   openLogViewer: (gameId) => set({ showLogViewer: true, logViewerGameId: gameId }),
   closeLogViewer: () => set({ showLogViewer: false }),
+
+  showToast: (message, type = 'error') => {
+    set({ toast: { message, type } })
+    setTimeout(() => set({ toast: null }), 5000)
+  },
+  dismissToast: () => set({ toast: null }),
 
   init: async () => {
     if (!window.api) {
@@ -65,7 +72,7 @@ const useGameStore = create((set, get) => ({
     set({ games })
   },
 
-  setRunningState: (gameId, state) => {
+  setRunningState: (gameId, state, extra) => {
     set((prev) => {
       const next = { ...prev.runningGames }
       if (state === 'stopped') {
@@ -75,6 +82,12 @@ const useGameStore = create((set, get) => ({
       }
       return { runningGames: next }
     })
+
+    // Show toast on startup crash
+    if (state === 'error' && extra?.crashedOnStartup) {
+      get().showToast('Game crashed on startup — check the logs for details')
+      get().openLogViewer(gameId)
+    }
   },
 
   appendLog: (gameId, line, stream) => {

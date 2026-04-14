@@ -1,10 +1,17 @@
 import { useRef, useEffect, useState } from 'react'
 import useGameStore from '../store/useGameStore'
 
+const STATE_BADGES = {
+  initialising: { label: 'Initialising', color: 'bg-yellow-500/20 text-yellow-300' },
+  running: { label: 'Running', color: 'bg-green-500/20 text-green-300' },
+  error: { label: 'Error', color: 'bg-red-500/20 text-red-300' }
+}
+
 export default function LogViewer() {
   const logViewerGameId = useGameStore((s) => s.logViewerGameId)
   const logs = useGameStore((s) => s.logs[logViewerGameId] || [])
   const games = useGameStore((s) => s.games)
+  const runningState = useGameStore((s) => s.runningGames[logViewerGameId])
   const clearLogs = useGameStore((s) => s.clearLogs)
   const closeLogViewer = useGameStore((s) => s.closeLogViewer)
 
@@ -12,6 +19,7 @@ export default function LogViewer() {
   const scrollRef = useRef(null)
 
   const game = games.find((g) => g.id === logViewerGameId)
+  const badge = STATE_BADGES[runningState]
 
   useEffect(() => {
     if (autoScroll && scrollRef.current) {
@@ -22,8 +30,7 @@ export default function LogViewer() {
   const handleScroll = () => {
     if (!scrollRef.current) return
     const { scrollTop, scrollHeight, clientHeight } = scrollRef.current
-    const atBottom = scrollHeight - scrollTop - clientHeight < 40
-    setAutoScroll(atBottom)
+    setAutoScroll(scrollHeight - scrollTop - clientHeight < 40)
   }
 
   const copyAll = () => {
@@ -38,6 +45,11 @@ export default function LogViewer() {
         <div className="flex items-center gap-3">
           <h4 className="text-sm font-semibold text-white">Logs</h4>
           {game && <span className="text-xs text-gray-500">{game.name}</span>}
+          {badge && (
+            <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${badge.color}`}>
+              {badge.label}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -86,11 +98,13 @@ export default function LogViewer() {
             <div
               key={i}
               className={
-                entry.stream === 'stderr'
-                  ? 'text-red-400/80'
-                  : entry.stream === 'system'
-                    ? 'text-indigo-400/70'
-                    : 'text-gray-400'
+                entry.stream === 'error'
+                  ? 'text-red-500 font-medium'
+                  : entry.stream === 'stderr'
+                    ? 'text-red-400/80'
+                    : entry.stream === 'system'
+                      ? 'text-gray-500 italic'
+                      : 'text-gray-400'
               }
             >
               {entry.line}

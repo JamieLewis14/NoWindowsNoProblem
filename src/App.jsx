@@ -5,6 +5,7 @@ import GameLibrary from './components/GameLibrary'
 import AddGameModal from './components/AddGameModal'
 import GameConfigPanel from './components/GameConfigPanel'
 import LogViewer from './components/LogViewer'
+import Toast from './components/Toast'
 
 export default function App() {
   const setupStatus = useGameStore((s) => s.setupStatus)
@@ -20,20 +21,20 @@ export default function App() {
   const showLogViewer = useGameStore((s) => s.showLogViewer)
   const activeView = useGameStore((s) => s.activeView)
   const setActiveView = useGameStore((s) => s.setActiveView)
+  const toast = useGameStore((s) => s.toast)
 
   useEffect(() => {
     init()
 
     if (!window.api) return
 
-    // Kick off dependency check in parallel
     window.api.checkDependencies().then(setSetupStatus)
 
     const removeLogListener = window.api.onLogLine(({ gameId, line, stream }) => {
       appendLog(gameId, line, stream)
     })
-    const removeStateListener = window.api.onGameStateChange(({ gameId, state }) => {
-      setRunningState(gameId, state)
+    const removeStateListener = window.api.onGameStateChange(({ gameId, state, crashedOnStartup }) => {
+      setRunningState(gameId, state, { crashedOnStartup })
     })
 
     return () => {
@@ -42,17 +43,14 @@ export default function App() {
     }
   }, [])
 
-  // Still loading from store
   if (setupComplete === null) {
     return <div className="flex h-screen bg-gray-950" />
   }
 
-  // Show setup checker if: not completed yet, OR user navigated to settings
   const showSetup = !setupComplete || activeView === 'settings'
 
   return (
     <div className="flex h-screen bg-gray-950 text-gray-100">
-      {/* Sidebar — only shown once setup is done */}
       {setupComplete && (
         <aside className="w-52 flex-shrink-0 border-r border-gray-800 flex flex-col pt-10">
           <div className="px-5 mb-8">
@@ -81,7 +79,6 @@ export default function App() {
         </aside>
       )}
 
-      {/* Main content */}
       <main className="flex-1 overflow-hidden flex flex-col">
         {showSetup ? (
           <SetupChecker
@@ -109,10 +106,10 @@ export default function App() {
         )}
       </main>
 
-      {/* Overlays */}
       {showAddModal && <AddGameModal />}
       {selectedGameId && <GameConfigPanel />}
       {showLogViewer && <LogViewer />}
+      {toast && <Toast message={toast.message} type={toast.type} />}
     </div>
   )
 }
