@@ -14,12 +14,14 @@ const useGameStore = create((set, get) => ({
   showLogViewer: false,
   logViewerGameId: null,
   pendingExePath: null,
+  showSteamSetup: false,
   toast: null, // { message, type: 'error' | 'info' }
 
   setActiveView: (view) => set({ activeView: view }),
   setSelectedGameId: (id) => set({ selectedGameId: id }),
   setShowAddModal: (show) => set({ showAddModal: show }),
   setPendingExePath: (path) => set({ pendingExePath: path }),
+  setShowSteamSetup: (show) => set({ showSteamSetup: show }),
 
   openLogViewer: (gameId) => set({ showLogViewer: true, logViewerGameId: gameId }),
   closeLogViewer: () => set({ showLogViewer: false }),
@@ -39,7 +41,20 @@ const useGameStore = create((set, get) => ({
       window.api.getGames(),
       window.api.getSetting('setupComplete')
     ])
-    set({ games: games || [], setupComplete: setupComplete === true })
+
+    // Re-verify Wine even when setupComplete is persisted true — catches the
+    // case where Wine was uninstalled after the user completed setup.
+    if (setupComplete === true) {
+      const status = await window.api.checkDependencies()
+      if (!status.wine) {
+        set({ games: games || [], setupComplete: false, setupStatus: status })
+        return
+      }
+      set({ games: games || [], setupComplete: true, setupStatus: status })
+      return
+    }
+
+    set({ games: games || [], setupComplete: false })
   },
 
   markSetupComplete: async () => {

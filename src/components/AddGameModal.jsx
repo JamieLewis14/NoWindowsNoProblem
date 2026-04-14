@@ -16,13 +16,16 @@ export default function AddGameModal() {
   const addGame = useGameStore((s) => s.addGame)
   const pendingExePath = useGameStore((s) => s.pendingExePath)
   const setPendingExePath = useGameStore((s) => s.setPendingExePath)
+  const setShowSteamSetup = useGameStore((s) => s.setShowSteamSetup)
 
+  const [gameType, setGameType] = useState('standard')
   const [name, setName] = useState('')
   const [exePath, setExePath] = useState('')
   const [iconPath, setIconPath] = useState('')
   const [arch, setArch] = useState('win64')
   const [args, setArgs] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [steamStatus, setSteamStatus] = useState(null)
 
   // Pre-populate from pending path (file picker or drag-drop)
   useEffect(() => {
@@ -31,6 +34,18 @@ export default function AddGameModal() {
       setName(nameFromPath(pendingExePath))
     }
   }, [pendingExePath])
+
+  // Refresh Steam status when switching to Steam Game tab
+  useEffect(() => {
+    if (gameType !== 'steam' || !window.api) return
+    window.api.getSteamStatus().then(setSteamStatus)
+  }, [gameType])
+
+  const refreshSteamStatus = async () => {
+    if (!window.api) return
+    const status = await window.api.getSteamStatus()
+    setSteamStatus(status)
+  }
 
   const changeExe = async () => {
     if (!window.api) return
@@ -52,6 +67,10 @@ export default function AddGameModal() {
     if (path) setIconPath(path)
   }
 
+  const openSteamSetup = () => {
+    setShowSteamSetup(true)
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!name.trim() || !exePath.trim() || submitting) return
@@ -59,7 +78,11 @@ export default function AddGameModal() {
     setSubmitting(true)
     const id = uuidv4()
     const homeDir = window.api ? await window.api.getHomeDir() : '~'
-    const bottlePath = `${homeDir}/NoWindowsNoProblem/bottles/${id}`
+
+    const isSteam = gameType === 'steam'
+    const bottlePath = isSteam
+      ? `${homeDir}/NoWindowsNoProblem/bottles/_steam`
+      : `${homeDir}/NoWindowsNoProblem/bottles/${id}`
 
     await addGame({
       id,
@@ -68,8 +91,10 @@ export default function AddGameModal() {
       bottlePath,
       iconPath: iconPath || null,
       args: args.trim(),
-      arch,
+      arch: isSteam ? 'win64' : arch,
       envVars: {},
+      gameType: isSteam ? 'steam' : 'standard',
+      winVersion: isSteam ? 'win10' : undefined,
       createdAt: new Date().toISOString()
     })
 
@@ -82,13 +107,14 @@ export default function AddGameModal() {
     setShowAddModal(false)
   }
 
-  const canSubmit = name.trim() && exePath.trim() && !submitting
+  const canSubmit = name.trim() && exePath.trim() && !submitting &&
+    (gameType !== 'steam' || steamStatus?.installed)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md shadow-2xl mx-4">
+      <div className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-md shadow-2xl mx-4 max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-gray-800">
+        <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-gray-800 sticky top-0 bg-gray-900 z-10">
           <h3 className="text-base font-bold text-white">Add Game</h3>
           <button
             onClick={close}
@@ -101,6 +127,66 @@ export default function AddGameModal() {
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {/* Game type segmented control */}
+          <div>
+            <span className="text-xs font-medium text-gray-400 mb-1.5 block">Game Type</span>
+            <div className="grid grid-cols-2 gap-1 p-1 bg-gray-800 rounded-lg border border-gray-700">
+              <button
+                type="button"
+                onClick={() => setGameType('standard')}
+                className={`py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  gameType === 'standard'
+                    ? 'bg-indigo-500 text-white'
+                    : 'text-gray-400 hover:text-gray-200'
+                }`}
+              >
+                Standard
+              </button>
+              <button
+                type="button"
+                onClick={() => setGameType('steam')}
+                className={`py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  gameType === 'steam'
+                    ? 'bg-indigo-500 text-white'
+                    : 'text-gray-400 hover:text-gray-200'
+                }`}
+              >
+                Steam Game
+              </button>
+            </div>
+          </div>
+
+          {/* Steam-specific banners */}
+          {gameType === 'steam' && steamStatus && !steamStatus.installed && (
+            <div className="p-3 rounded-lg bg-indigo-500/10 border border-indigo-500/30 space-y-2">
+              <p className="text-xs text-indigo-200 leading-relaxed">
+                Steam isn't installed in the shared bottle yet. Set it up first, then come back to add your game.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={openSteamSetup}
+                  className="px-3 py-1.5 rounded-md bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-medium transition-colors"
+                >
+                  Set up Steam
+                </button>
+                <button
+                  type="button"
+                  onClick={refreshSteamStatus}
+                  className="px-3 py-1.5 rounded-md border border-gray-700 text-gray-300 text-xs font-medium hover:bg-gray-800 transition-colors"
+                >
+                  Refresh
+                </button>
+              </div>
+            </div>
+          )}
+
+          {gameType === 'steam' && (
+            <div className="p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-xs text-yellow-200 leading-relaxed">
+              Steam will auto-launch with <code className="px-1 py-0.5 bg-yellow-500/20 rounded">-no-cef-sandbox</code> before your game. If Steam's UI is blank, use <strong>View &gt; Small Mode</strong>.
+            </div>
+          )}
+
           {/* Box art + name row */}
           <div className="flex gap-4 items-start">
             {/* Box art thumbnail */}
@@ -153,7 +239,7 @@ export default function AddGameModal() {
           {/* Exe path — read-only + Change */}
           <div>
             <label className="text-xs font-medium text-gray-400 mb-1.5 block">
-              Executable <span className="text-red-400">*</span>
+              {gameType === 'steam' ? 'Game Executable' : 'Executable'} <span className="text-red-400">*</span>
             </label>
             <div className="flex gap-2">
               <div className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-xs text-gray-400 font-mono truncate">
@@ -167,33 +253,63 @@ export default function AddGameModal() {
                 {exePath ? 'Change' : 'Browse'}
               </button>
             </div>
+            {gameType === 'steam' && (
+              <p className="text-[10px] text-gray-500 mt-1.5 leading-relaxed">
+                Inside the shared bottle: <code className="text-gray-400">drive_c/Program Files (x86)/Steam/steamapps/common/&lt;game&gt;/</code>
+              </p>
+            )}
           </div>
 
-          {/* Arch + Extra args */}
-          <div className="grid grid-cols-2 gap-3">
-            <label className="block">
-              <span className="text-xs font-medium text-gray-400 mb-1.5 block">Wine Arch</span>
-              <select
-                value={arch}
-                onChange={(e) => setArch(e.target.value)}
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
-              >
-                <option value="win64">win64 (64-bit)</option>
-                <option value="win32">win32 (32-bit)</option>
-              </select>
-            </label>
+          {/* Bottle display for Steam games */}
+          {gameType === 'steam' && (
+            <div>
+              <span className="text-xs font-medium text-gray-400 mb-1.5 block">Bottle</span>
+              <div className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-xs text-gray-400 font-mono">
+                shared Steam bottle
+              </div>
+            </div>
+          )}
 
+          {/* Arch + Extra args — hidden for Steam games (fixed to win64) */}
+          {gameType !== 'steam' && (
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block">
+                <span className="text-xs font-medium text-gray-400 mb-1.5 block">Wine Arch</span>
+                <select
+                  value={arch}
+                  onChange={(e) => setArch(e.target.value)}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                >
+                  <option value="win64">win64 (64-bit)</option>
+                  <option value="win32">win32 (32-bit)</option>
+                </select>
+              </label>
+
+              <label className="block">
+                <span className="text-xs font-medium text-gray-400 mb-1.5 block">Extra Args</span>
+                <input
+                  type="text"
+                  value={args}
+                  onChange={(e) => setArgs(e.target.value)}
+                  placeholder="--no-sandbox"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition-colors"
+                />
+              </label>
+            </div>
+          )}
+
+          {gameType === 'steam' && (
             <label className="block">
-              <span className="text-xs font-medium text-gray-400 mb-1.5 block">Extra Args</span>
+              <span className="text-xs font-medium text-gray-400 mb-1.5 block">Extra Game Args</span>
               <input
                 type="text"
                 value={args}
                 onChange={(e) => setArgs(e.target.value)}
-                placeholder="--no-sandbox"
+                placeholder="(optional)"
                 className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition-colors"
               />
             </label>
-          </div>
+          )}
 
           {/* Actions */}
           <div className="flex justify-end gap-3 pt-1">

@@ -1,11 +1,11 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 const DEPS = [
   {
     key: 'wine',
     label: 'Wine',
     description: 'Windows compatibility layer for running .exe files',
-    fix: 'brew install wine-stable',
+    fix: 'brew install --cask gcenx/wine/wine-stable',
     fixType: 'command',
     required: true
   },
@@ -31,9 +31,59 @@ export default function SetupChecker({ status, isSettingsMode, onRecheck, onCont
   const [checking, setChecking] = useState(false)
   const [continuing, setContinuing] = useState(false)
   const [copied, setCopied] = useState(null)
+  const [winePath, setWinePath] = useState(null)
+  const [probe, setProbe] = useState(null)
+  const [winePathError, setWinePathError] = useState(null)
+  const [busy, setBusy] = useState(false)
 
   const wineOk = status?.wine === true
   const loading = status === null
+
+  // Refresh the resolved wine path whenever status changes.
+  useEffect(() => {
+    if (!window.api?.getWinePath) return
+    window.api.getWinePath().then(setWinePath)
+  }, [status])
+
+  const refreshWinePath = async () => {
+    if (!window.api?.getWinePath) return
+    const p = await window.api.getWinePath()
+    setWinePath(p)
+  }
+
+  const handleAutoDetect = async () => {
+    if (!window.api?.detectWinePath) return
+    setBusy(true)
+    setWinePathError(null)
+    try {
+      const result = await window.api.detectWinePath()
+      setProbe(result)
+      await refreshWinePath()
+      await onRecheck()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleChangeWinePath = async () => {
+    if (!window.api?.openFilePicker || !window.api?.setWinePath) return
+    const picked = await window.api.openFilePicker({
+      title: 'Select Wine binary'
+    })
+    if (!picked) return
+    setBusy(true)
+    setWinePathError(null)
+    try {
+      await window.api.setWinePath(picked)
+      setProbe(null)
+      await refreshWinePath()
+      await onRecheck()
+    } catch (err) {
+      setWinePathError(err.message || String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const handleRecheck = async () => {
     setChecking(true)
@@ -152,6 +202,57 @@ export default function SetupChecker({ status, isSettingsMode, onRecheck, onCont
                           >
                             Download XQuartz →
                           </a>
+                        )}
+                      </div>
+                    )}
+
+                    {dep.key === 'wine' && !loading && (
+                      <div className="mt-3 pt-3 border-t border-gray-800/60 space-y-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <div className="text-[10px] font-semibold tracking-wide text-gray-500 uppercase mb-0.5">
+                              Current Wine Path
+                            </div>
+                            <div className="text-xs font-mono text-gray-300 truncate">
+                              {winePath || <span className="text-gray-500">Not detected</span>}
+                            </div>
+                          </div>
+                          <div className="flex flex-shrink-0 gap-1.5">
+                            <button
+                              onClick={handleAutoDetect}
+                              disabled={busy}
+                              className="text-xs px-2.5 py-1 rounded-md bg-gray-800 text-gray-300 hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              Auto-detect
+                            </button>
+                            <button
+                              onClick={handleChangeWinePath}
+                              disabled={busy}
+                              className="text-xs px-2.5 py-1 rounded-md bg-gray-800 text-gray-300 hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              Change...
+                            </button>
+                          </div>
+                        </div>
+
+                        {winePathError && (
+                          <p className="text-xs text-red-400">{winePathError}</p>
+                        )}
+
+                        {probe && !probe.path && (
+                          <div className="text-[11px] text-gray-500">
+                            <div className="mb-1">No Wine binary found. Checked paths:</div>
+                            <ul className="space-y-0.5 font-mono">
+                              {probe.candidates.map((c) => (
+                                <li key={c.path} className="flex items-center gap-1.5">
+                                  <span className={c.usable ? 'text-green-400' : 'text-red-500/70'}>
+                                    {c.usable ? '✓' : '✗'}
+                                  </span>
+                                  <span className="truncate">{c.path}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
                         )}
                       </div>
                     )}

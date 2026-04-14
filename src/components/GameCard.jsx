@@ -16,8 +16,10 @@ export default function GameCard({ game }) {
 
   const isRunning = runningState === 'running'
   const isInit = runningState === 'initialising'
+  const isStartingSteam = runningState === 'starting-steam'
   const isError = runningState === 'error'
-  const isBusy = isRunning || isInit
+  const isBusy = isRunning || isInit || isStartingSteam
+  const isSteamGame = game.gameType === 'steam'
 
   // Check if exe exists (only when idle/error, not while running)
   useEffect(() => {
@@ -32,7 +34,7 @@ export default function GameCard({ game }) {
       await window.api.killGame(game.id)
       return
     }
-    if (isInit) return // Don't interrupt init
+    if (isInit || isStartingSteam) return // Don't interrupt init / Steam startup
 
     // Clear previous error state before launch
     if (isError) {
@@ -55,7 +57,12 @@ export default function GameCard({ game }) {
 
   const handleDelete = async (deleteBottle) => {
     if (deleteBottle && window.api) {
-      await window.api.resetBottle(game)
+      try {
+        await window.api.resetBottle(game)
+      } catch (err) {
+        showToast(err.message || String(err))
+        return
+      }
     }
     await removeGame(game.id)
     setConfirmDelete(false)
@@ -63,7 +70,16 @@ export default function GameCard({ game }) {
   }
 
   const handleResetBottle = async () => {
-    if (window.api) await window.api.resetBottle(game)
+    if (window.api) {
+      try {
+        await window.api.resetBottle(game)
+      } catch (err) {
+        showToast(err.message || String(err))
+        setConfirmReset(false)
+        setMenuOpen(false)
+        return
+      }
+    }
     setRunningState(game.id, 'stopped')
     setConfirmReset(false)
     setMenuOpen(false)
@@ -85,6 +101,13 @@ export default function GameCard({ game }) {
           </span>
         )}
 
+        {/* Steam chip */}
+        {isSteamGame && (
+          <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-indigo-500/30 backdrop-blur-sm">
+            <span className="text-[9px] text-indigo-200 font-semibold tracking-wider">STEAM</span>
+          </div>
+        )}
+
         {/* Status badges */}
         {isRunning && (
           <div className="absolute top-2 right-2 flex items-center gap-1.5 px-2 py-1 rounded-full bg-green-500/20 backdrop-blur-sm">
@@ -98,13 +121,19 @@ export default function GameCard({ game }) {
             <span className="text-[10px] text-yellow-300 font-medium">Setting up...</span>
           </div>
         )}
+        {isStartingSteam && (
+          <div className="absolute top-2 right-2 flex items-center gap-1.5 px-2 py-1 rounded-full bg-yellow-500/20 backdrop-blur-sm">
+            <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
+            <span className="text-[10px] text-yellow-300 font-medium">Starting Steam...</span>
+          </div>
+        )}
         {isError && (
           <div className="absolute top-2 right-2 flex items-center gap-1.5 px-2 py-1 rounded-full bg-orange-500/20 backdrop-blur-sm">
             <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
             <span className="text-[10px] text-orange-300 font-medium">Last run failed</span>
           </div>
         )}
-        {exeMissing && (
+        {exeMissing && !isSteamGame && (
           <div className="absolute top-2 left-2 px-2 py-1 rounded-full bg-red-500/20 backdrop-blur-sm">
             <span className="text-[10px] text-red-300 font-medium">EXE not found</span>
           </div>
@@ -112,7 +141,7 @@ export default function GameCard({ game }) {
 
         {/* Play/Stop overlay */}
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
-          {isInit ? (
+          {(isInit || isStartingSteam) ? (
             <div className="w-12 h-12 rounded-full bg-gray-700/80 flex items-center justify-center">
               <svg className="w-5 h-5 text-yellow-300 animate-spin" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -165,12 +194,20 @@ export default function GameCard({ game }) {
               <div className="fixed inset-0 z-40" onClick={() => { setMenuOpen(false); setConfirmDelete(false); setConfirmReset(false) }} />
               <div className="absolute right-0 bottom-full mb-1 w-44 rounded-lg bg-gray-800 border border-gray-700 shadow-xl z-50 py-1">
                 {confirmDelete ? (
-                  <>
-                    <div className="px-3 py-2 text-xs text-gray-400">Delete bottle data too?</div>
-                    <MenuBtn danger onClick={() => handleDelete(true)}>Delete + Bottle</MenuBtn>
-                    <MenuBtn onClick={() => handleDelete(false)}>Remove from Library</MenuBtn>
-                    <MenuBtn onClick={() => { setConfirmDelete(false); setMenuOpen(false) }}>Cancel</MenuBtn>
-                  </>
+                  isSteamGame ? (
+                    <>
+                      <div className="px-3 py-2 text-xs text-gray-400">Remove this Steam game from your library? The shared Steam bottle is not affected.</div>
+                      <MenuBtn danger onClick={() => handleDelete(false)}>Remove from Library</MenuBtn>
+                      <MenuBtn onClick={() => { setConfirmDelete(false); setMenuOpen(false) }}>Cancel</MenuBtn>
+                    </>
+                  ) : (
+                    <>
+                      <div className="px-3 py-2 text-xs text-gray-400">Delete bottle data too?</div>
+                      <MenuBtn danger onClick={() => handleDelete(true)}>Delete + Bottle</MenuBtn>
+                      <MenuBtn onClick={() => handleDelete(false)}>Remove from Library</MenuBtn>
+                      <MenuBtn onClick={() => { setConfirmDelete(false); setMenuOpen(false) }}>Cancel</MenuBtn>
+                    </>
+                  )
                 ) : confirmReset ? (
                   <>
                     <div className="px-3 py-2 text-xs text-gray-400">This will delete the Wine environment for this game.</div>
@@ -183,7 +220,9 @@ export default function GameCard({ game }) {
                     <MenuBtn onClick={() => { openLogViewer(game.id); setMenuOpen(false) }}>View Logs</MenuBtn>
                     <MenuBtn onClick={() => { window.api?.openBottleFolder(game.bottlePath); setMenuOpen(false) }}>Open Bottle Folder</MenuBtn>
                     <div className="border-t border-gray-700 my-1" />
-                    <MenuBtn onClick={() => setConfirmReset(true)}>Reset Bottle</MenuBtn>
+                    {!isSteamGame && (
+                      <MenuBtn onClick={() => setConfirmReset(true)}>Reset Bottle</MenuBtn>
+                    )}
                     <MenuBtn danger onClick={() => setConfirmDelete(true)}>Delete</MenuBtn>
                   </>
                 )}

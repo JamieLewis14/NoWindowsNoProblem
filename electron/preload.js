@@ -13,6 +13,13 @@ contextBridge.exposeInMainWorld('api', {
   openBottleFolder: (bottlePath) => ipcRenderer.invoke('open-bottle-folder', bottlePath),
   bottleExists: (gameId) => ipcRenderer.invoke('bottle-exists', gameId),
   getHomeDir: () => ipcRenderer.invoke('get-home-dir'),
+  detectWinePath: () => ipcRenderer.invoke('detect-wine-path'),
+  setWinePath: (winePath) => ipcRenderer.invoke('set-wine-path', winePath),
+  getWinePath: () => ipcRenderer.invoke('get-wine-path'),
+  getSteamStatus: () => ipcRenderer.invoke('get-steam-status'),
+  launchSteamOnly: () => ipcRenderer.invoke('launch-steam-only'),
+  installSteam: (installerPath) => ipcRenderer.invoke('install-steam', installerPath),
+  resetSteamBottle: () => ipcRenderer.invoke('reset-steam-bottle'),
   onLogLine: (callback) => {
     const handler = (_event, data) => callback(data)
     ipcRenderer.on('log-line', handler)

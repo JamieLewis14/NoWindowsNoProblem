@@ -3,6 +3,7 @@ import useGameStore from '../store/useGameStore'
 
 const STATE_BADGES = {
   initialising: { label: 'Initialising', color: 'bg-yellow-500/20 text-yellow-300' },
+  'starting-steam': { label: 'Starting Steam', color: 'bg-yellow-500/20 text-yellow-300' },
   running: { label: 'Running', color: 'bg-green-500/20 text-green-300' },
   error: { label: 'Error', color: 'bg-red-500/20 text-red-300' }
 }

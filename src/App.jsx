@@ -6,6 +6,7 @@ import AddGameModal from './components/AddGameModal'
 import GameConfigPanel from './components/GameConfigPanel'
 import LogViewer from './components/LogViewer'
 import Toast from './components/Toast'
+import SteamSetupGuide from './components/SteamSetupGuide'
 
 export default function App() {
   const setupStatus = useGameStore((s) => s.setupStatus)
@@ -19,6 +20,7 @@ export default function App() {
   const showAddModal = useGameStore((s) => s.showAddModal)
   const selectedGameId = useGameStore((s) => s.selectedGameId)
   const showLogViewer = useGameStore((s) => s.showLogViewer)
+  const showSteamSetup = useGameStore((s) => s.showSteamSetup)
   const activeView = useGameStore((s) => s.activeView)
   const setActiveView = useGameStore((s) => s.setActiveView)
   const toast = useGameStore((s) => s.toast)
@@ -109,6 +111,7 @@ export default function App() {
       {showAddModal && <AddGameModal />}
       {selectedGameId && <GameConfigPanel />}
       {showLogViewer && <LogViewer />}
+      {showSteamSetup && <SteamSetupGuide />}
       {toast && <Toast message={toast.message} type={toast.type} />}
     </div>
   )
