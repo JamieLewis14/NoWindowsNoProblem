@@ -62,7 +62,8 @@ function runWineCommand(winePath, args, bottlePath, arch, onLog) {
       ...process.env,
       WINEPREFIX: bottlePath,
       WINEARCH: arch,
-      WINEDEBUG: '-all'
+      WINEDEBUG: '-all',
+      GNUTLS_SYSTEM_PRIORITY_OVERRIDE: 'NORMAL:-VERS-TLS1.3'
     }
 
     const proc = spawn(winePath, args, { env })
@@ -135,7 +136,8 @@ async function initBottle(bottlePath, arch, winePath, onLog, winVersion) {
       ...process.env,
       WINEPREFIX: bottlePath,
       WINEARCH: arch,
-      WINEDEBUG: '-all'
+      WINEDEBUG: '-all',
+      GNUTLS_SYSTEM_PRIORITY_OVERRIDE: 'NORMAL:-VERS-TLS1.3'
     }
 
     const proc = spawn(winePath, ['wineboot', '--init'], { env })
@@ -158,6 +160,19 @@ async function initBottle(bottlePath, arch, winePath, onLog, winVersion) {
 
   if (winVersion) {
     await setWindowsVersion(bottlePath, winePath, winVersion, arch, onLog)
+  }
+
+  // Disable TLS 1.3 in Wine's Schannel so Steam CDN downloads use TLS 1.2.
+  // GnuTLS 3.7.x (bundled in wine-crossover 23.7.1) has TLS 1.3 incompatibility
+  // with Fastly/Akamai edge nodes on some home networks → "http error 0".
+  onLog({ line: '[System] Applying Schannel TLS 1.2 compatibility fix...\n', stream: 'system' })
+  const schannelBase = 'HKLM\\SYSTEM\\ControlSet001\\Control\\SecurityProviders\\Schannel\\Protocols\\TLS 1.3\\Client'
+  for (const [name, val] of [['Enabled', '0'], ['DisabledByDefault', '1']]) {
+    try {
+      await runWineCommand(winePath, ['reg', 'add', schannelBase, '/v', name, '/t', 'REG_DWORD', '/d', val, '/f'], bottlePath, arch, onLog)
+    } catch (err) {
+      onLog({ line: `[System] Schannel TLS fix warning: ${err.message}\n`, stream: 'system' })
+    }
   }
 }
 
@@ -226,7 +241,7 @@ async function launchSteamOnly(winePath, onLog) {
     throw new Error('Steam is not installed in the shared bottle. Use the Steam setup guide to install it first.')
   }
 
-  if (steamManager.isSteamAlive()) {
+  if (steamManager.isSteamAlive(bottlePath)) {
     onLog({ line: '[System] Steam is already running.\n', stream: 'system' })
     return
   }
@@ -293,7 +308,7 @@ async function launchGame(game, winePath, onLog, onStateChange) {
       throw new Error(msg)
     }
 
-    if (!steamManager.isSteamAlive()) {
+    if (!steamManager.isSteamAlive(effectiveBottlePath)) {
       onStateChange({ gameId: game.id, state: 'starting-steam' })
       onLog({ gameId: game.id, line: '[System] Launching Steam with -no-cef-sandbox...\n', stream: 'system' })
 
@@ -309,7 +324,7 @@ async function launchGame(game, winePath, onLog, onStateChange) {
         throw err
       }
     } else {
-      onLog({ gameId: game.id, line: '[System] Reusing running Steam process.\n', stream: 'system' })
+      onLog({ gameId: game.id, line: `[System] Reusing running Steam in ${effectiveBottlePath}.\n`, stream: 'system' })
     }
   }
 
@@ -320,6 +335,7 @@ async function launchGame(game, winePath, onLog, onStateChange) {
     WINEPREFIX: effectiveBottlePath,
     WINEARCH: game.arch || 'win64',
     WINEDEBUG: '-all',
+    GNUTLS_SYSTEM_PRIORITY_OVERRIDE: 'NORMAL:-VERS-TLS1.3',
     ...(game.envVars || {})
   }
 
@@ -410,7 +426,7 @@ function getSteamStatus() {
   const exePath = steamManager.findSteamExe(bottlePath)
   return {
     installed: exePath !== null,
-    running: steamManager.isSteamAlive(),
+    running: steamManager.isSteamAlive(bottlePath),
     exePath,
     bottlePath
   }
