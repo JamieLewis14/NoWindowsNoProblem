@@ -31,27 +31,52 @@ function findSteamExe(bottlePath) {
   return null
 }
 
-function isSteamAliveByProcess() {
+// True iff a wine-spawned steam.exe is running with WINEPREFIX=bottlePath.
+// We match by env var, not command line, because wine reports steam.exe's path
+// as a Windows-style C:\ string that doesn't identify which bottle it came from,
+// so a global pgrep would falsely report "Steam is up" for Steams in other bottles.
+function isSteamAliveByProcess(bottlePath) {
+  if (!bottlePath) return false
+  let pids
   try {
-    execSync('pgrep -f "steam.exe"', { stdio: 'pipe' })
-    return true
+    pids = execSync('pgrep -f steam.exe', { stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString()
+      .split('\n')
+      .map((s) => s.trim())
+      .filter(Boolean)
   } catch {
     return false
   }
+  const needle = `WINEPREFIX=${bottlePath}`
+  for (const pid of pids) {
+    try {
+      // macOS `ps -E` prints environment alongside the command line.
+      const envDump = execSync(`ps -E -p ${pid} -o command=`, {
+        stdio: ['ignore', 'pipe', 'ignore']
+      }).toString()
+      if (envDump.includes(needle)) return true
+    } catch { /* pid vanished between pgrep and ps — ignore */ }
+  }
+  return false
 }
 
-function isSteamAlive() {
-  if (steamProcess && steamProcess.pid) {
+function isSteamAlive(bottlePath) {
+  // Trust our own spawn ref only if the bottle matches what we launched with.
+  if (
+    steamProcess &&
+    steamProcess.pid &&
+    steamProcess._bottlePath === bottlePath
+  ) {
     try {
       process.kill(steamProcess.pid, 0)
       return true
     } catch { /* fall through to pgrep */ }
   }
-  return isSteamAliveByProcess()
+  return isSteamAliveByProcess(bottlePath)
 }
 
 function launchSteam(winePath, bottlePath, onLog) {
-  if (isSteamAlive()) return steamProcess
+  if (isSteamAlive(bottlePath)) return steamProcess
 
   const steamExe = findSteamExe(bottlePath)
   if (!steamExe) {
@@ -62,7 +87,11 @@ function launchSteam(winePath, bottlePath, onLog) {
     ...process.env,
     WINEPREFIX: bottlePath,
     WINEARCH: 'win64',
-    WINEDEBUG: '-all'
+    WINEDEBUG: '-all',
+    // GnuTLS 3.7.x (bundled in wine-crossover 23.7.1) has a TLS 1.3 incompatibility
+    // with Fastly/Akamai CDN edge nodes on some home networks — manifests as Steam
+    // "needs to be online to update" (http error 0 / connection hang). Force TLS 1.2.
+    GNUTLS_SYSTEM_PRIORITY_OVERRIDE: 'NORMAL:-VERS-TLS1.3'
   }
 
   const proc = spawn(winePath, [steamExe, '-no-cef-sandbox'], { env, detached: true })
@@ -78,7 +107,7 @@ function launchSteam(winePath, bottlePath, onLog) {
   proc.on('close', (code) => {
     onLog({ line: `[Steam] Process exited with code ${code}\n`, stream: 'system' })
     // Only clear steamProcess if the real Steam is also gone (bootstrapper exits with 0)
-    if (steamProcess === proc && !isSteamAliveByProcess()) steamProcess = null
+    if (steamProcess === proc && !isSteamAliveByProcess(bottlePath)) steamProcess = null
   })
 
   proc.on('error', (err) => {
@@ -90,6 +119,7 @@ function launchSteam(winePath, bottlePath, onLog) {
     if (steamProcess === proc) steamProcess = null
   })
 
+  proc._bottlePath = bottlePath
   steamProcess = proc
   return proc
 }
@@ -119,7 +149,7 @@ function waitForSteamReady(steamProc, timeoutMs = 45000) {
       if (resolved) return
       resolved = true
       steamProc.removeListener('close', onEarlyExit)
-      if (isSteamAlive()) {
+      if (isSteamAlive(steamProc._bottlePath)) {
         resolve()
       } else {
         reject(new Error('Steam process died before becoming ready'))
